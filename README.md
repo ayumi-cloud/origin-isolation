@@ -102,7 +102,7 @@ Currently, the state of the art in isolation is process-based. That is, current 
 
 The nuances of this proposal come into play under the following scenarios:
 
-* When allocating a process-per-origin is infeasible, e.g. because you are operating on a low-memory device or have already allocated a ton of processes. In such scenarios the browser can use the different hints to prioritize how it allocates processes, e.g. prioritizing protection from side-channel attacks above allowing memory measurement. 
+* When allocating a process-per-origin is infeasible, e.g. because you are operating on a low-memory device or have already allocated a ton of processes. In such scenarios the browser can use the different hints to prioritize how it allocates processes, e.g. prioritizing protection from side-channel attacks above allowing memory measurement.
 
 * When alternate isolation techniques are available, which give some but not all of the benefits as proccess isolation. For example, Blink is exploring a ["multiple Blink isolates/threads"](https://docs.google.com/document/d/12wEWJsZmxVnNwVGuxuEJF4922OWUr4fCs1xKHi9mTiI/edit#heading=h.g6fq85as9ptv) project, which would provide isolated event loops and heaps, but not full side-channel protection. A site which expressed a preference only for isolated event loops could thus be given a new thread, instead of a new process, saving resources.
 
@@ -135,16 +135,28 @@ In particular, when creating a document, we use the following in place of the cu
 1. If _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_origin_] exists, then return _origin_.
 1. Let _site_ be (_origin_'s [scheme](https://html.spec.whatwg.org/#concept-origin-scheme), _origin_'s [host](https://html.spec.whatwg.org/#concept-origin-host)'s [registrable domain](https://url.spec.whatwg.org/#host-registrable-domain)).
 1. If _requestsIsolation_ is true:
-    1. If _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_site_] exists, and _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_site_] contains any agents which contain any realms whose [settings object](https://html.spec.whatwg.org/#concept-realm-settings-object)'s [origin](https://html.spec.whatwg.org/#concept-settings-object-origin) are [same-origin](https://html.spec.whatwg.org/#same-origin) with _origin_, then return _site_.
+    1. If _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_site_] exists, and _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_site_] has seen _origin_ before, then return _site_.
     1. Return _origin_.
 1. Return _site_.
+
+A browsing context agent cluster _agentCluster_ **has seen an origin before**, given an origin _origin_, if the following algorithm returns true:
+
+1. Let _windowAgent_ be the single [similar-origin window agent](https://html.spec.whatwg.org/#similar-origin-window-agent) in _agentCluster_.
+1. For each [realm](https://tc39.es/ecma262/#sec-code-realms) _realm_ whose agent is _windowAgent_:
+    1. Let _window_ be _realm_'s [global object](https://html.spec.whatwg.org/#concept-realm-global).
+    1. Assert: _window_ is a `Window` object.
+    1. Let _browsingContext_ be _window_'s [browsing context](https://html.spec.whatwg.org/#window-bc).
+    1. If _browsingContext_ is null, then continue.
+    1. Let _sessionHistory_ be _browsingContext_'s [session history](https://html.spec.whatwg.org/#session-history).
+    1. If _sessionHistory_ contains an [entry](https://html.spec.whatwg.org/#session-history-entry) whose `Document` is non-null, and that `Document`'s [origin](https://dom.spec.whatwg.org/#concept-document-origin) is [same-origin](https://html.spec.whatwg.org/#same-origin) with _origin_, then return true.
+1. Return false.
 
 This algorithm has two interesting features:
 
 * Even if origin isolation is not requested for a particular document creation, if origin isolation has previously created an origin-keyed agent cluster, then we put the new document in that origin-keyed agent cluster.
-* Even when origin isolation is requested, if there is a site-keyed agent cluster with same-origin documents, then we put the new document in that site-keyed agent cluster, ignoring the isolation request.
+* Even when origin isolation is requested, if there is a site-keyed agent cluster with same-origin documents in its session history, then we put the new document in that site-keyed agent cluster, ignoring the isolation request.
 
-Both of these are consequences of a desire to ensure that same-origin sites do not end up isolated from each other.
+Both of these are consequences of a desire to ensure that same-origin sites do not end up isolated from each other, even in scenarios involving session history navigation and the back–forward cache.
 
 You can see a more full analysis of what results this algorithm produces in our [scenarios document](./scenarios.md).
 
